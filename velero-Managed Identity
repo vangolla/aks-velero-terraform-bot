@@ -1,0 +1,18 @@
+Then assign permission to Agent Pool Managed Identity (s-demo-cluster-agentpool) to manage Managed Identity and VM to support AAD Pod Identity operation.
+
+$ export IDENTITY_CLIENT_ID="$(az identity show -g MC_s-demo_s-demo-cluster_westus -n s-demo-cluster-agentpool --subscription [your-subscription-id] --query clientId -otsv)"
+$ az role assignment create --role "Managed Identity Operator" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/s-demo" --query id -otsv
+az role assignment create --role "Managed Identity Operator" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/MC_s-demo_s-demo-cluster_westus" --query id -otsv
+$ az role assignment create --role "Virtual Machine Contributor" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/MC_s-demo_s-demo-cluster_westus" --query id -otsv
+
+
+6. Create a Managed identity named velero and Assign Permission for Access Blob Container named velero-blob.
+
+Create a Managed identity as follows:
+
+$ az identity create --subscription [your-subscription-id] --resource-group s-demo --name velero
+
+Assign Permission for Access Blob Container named velero-blob
+
+$ export IDENTITY_CLIENT_ID="$(az identity show -g s-demo -n velero --subscription [your-subscription-id] --query clientId -otsv)"
+$ az role assignment create --role "Storage Account Contributor" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/s-demo/providers/Microsoft.Storage/storageAccounts/velerosdemoaccount" --query id -otsv
