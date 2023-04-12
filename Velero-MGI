@@ -1,0 +1,59 @@
+Then assign permission to Agent Pool Managed Identity (s-demo-cluster-agentpool) to manage Managed Identity and VM to support AAD Pod Identity operation.
+$ export IDENTITY_CLIENT_ID="$(az identity show -g MC_s-demo_s-demo-cluster_westus -n s-demo-cluster-agentpool --subscription [your-subscription-id] --query clientId -otsv)"
+$ az role assignment create --role "Managed Identity Operator" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/s-demo" --query id -otsv
+az role assignment create --role "Managed Identity Operator" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/MC_s-demo_s-demo-cluster_westus" --query id -otsv
+$ az role assignment create --role "Virtual Machine Contributor" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/MC_s-demo_s-demo-cluster_westus" --query id -otsv
+##########
+Create a Managed identity named velero and Assign Permission for Access Blob Container named velero-blob.
+
+$ az identity create --subscription [your-subscription-id] --resource-group s-demo --name velero
+#########
+Assign Permission for Access Blob Container named velero-blob
+$ export IDENTITY_CLIENT_ID="$(az identity show -g s-demo -n velero --subscription [your-subscription-id] --query clientId -otsv)"
+$ az role assignment create --role "Storage Account Contributor" --assignee $IDENTITY_CLIENT_ID --scope "/subscriptions/[your-subscription-id]/resourceGroups/s-demo/providers/Microsoft.Storage/storageAccounts/velerosdemoaccount" --query id -otsv
+
+###############
+Install AAD Pod Identity to Map Managed Identity Token for Access Blob Container to Velero to install.
+Add Helm AAD Pod Identity Repository
+$ helm repo add aad-pod-identity https://raw.githubusercontent.com/Azure/aad-pod-identity/master/charts
+$ helm repo update
+
+Install AAD Pod Idenity
+helm install aad-pod-identity -n kube-system aad-pod-identity/aad-pod-identity
+
+Create AzureIdentity and AzureIdentityBinding to Map Managed Identity Token to Velero to install.
+$ export IDENTITY_RESOURCE_ID="$(az identity show -g s-demo -n velero --subscription [your-subscription-id] --query id -otsv)"
+$ kubectl create namespace velero
+$ cat <<EOF | kubectl apply -f -
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentity
+metadata:
+  name: velero-ai
+  namespace: velero
+spec:
+  type: 0
+  resourceID: $IDENTITY_RESOURCE_ID
+  clientID: $IDENTITY_CLIENT_ID
+EOF
+
+$ cat <<EOF | kubectl apply -f -
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentityBinding
+metadata:
+  name: velero-ai-binding
+  namespace: velero
+spec:
+  azureIdentity: velero-ai
+  selector: velero-ai
+EOF
+############
+ Install Velero
+
+##############
+Then Assign AzureIdentityBinding to Velero to Map Managed Identity Token.
+kubectl label pods aadpodidbinding=sailboat-ai -l component=sailboat -n sailboat
+
+Create a Velero Backup Location named velerosdemoaccount.
+Create a bsl-credentials file so Velero can connect to Azure.
+$ kubectl create secret generic -n velero bsl-credentials --from-file=azure=./credentials-velero
+$ velero backup-location create velerosdemoaccount --provider azure  --bucket velero-blob --config 'resourceGroup=s-demo,storageAccount=velerosdemoaccount,subscriptionId=[your-subscription-id]' --credential=bsl-credentials=azure --features=EnableCSI
